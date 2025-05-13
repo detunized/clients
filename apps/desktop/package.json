@@ -68,5 +68,11 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:watch:all": "jest --watchAll"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
   }
 }
