@@ -124,6 +124,15 @@ const localhostCallbackService = {
   },
 };
 
+const chromiumImport = {
+  getInstalledBrowsers: (): Promise<string[]> =>
+    ipcRenderer.invoke("chromiumImport.getInstalledBrowsers"),
+  getAvailableProfiles: (browser: string): Promise<string[]> =>
+    ipcRenderer.invoke("chromiumImport.getAvailableProfiles", browser),
+  importLogins: (browser: string, profile: string): Promise<any> =>
+    ipcRenderer.invoke("chromiumImport.importLogins", browser, profile),
+};
+
 export default {
   versions: {
     app: (): Promise<string> => ipcRenderer.invoke("appVersion"),
@@ -196,6 +205,7 @@ export default {
   crypto,
   ephemeralStore,
   localhostCallbackService,
+  chromiumImport,
 };
 
 function deviceType(): DeviceType {

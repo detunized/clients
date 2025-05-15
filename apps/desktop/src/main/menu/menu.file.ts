@@ -26,6 +26,8 @@ export class FileMenu extends FirstMenu implements IMenubarMenu {
       this.syncVault,
       this.importVault,
       this.exportVault,
+      // TODO: @detunized remove this!
+      this.testChromiumImport,
     ];
 
     if (!isMac()) {
@@ -144,6 +146,17 @@ export class FileMenu extends FirstMenu implements IMenubarMenu {
       id: "exportVault",
       label: this.localize("exportVault"),
       click: () => this.sendMessage("exportVault"),
+      enabled: !this._isLocked,
+    };
+  }
+
+  // TODO: @detunized remove this!
+  private get testChromiumImport(): MenuItemConstructorOptions {
+    return {
+      id: "testChromiumImport",
+      label: "Test Chromium Import",
+      click: () => this.sendMessage("testChromiumImport"),
+      accelerator: "CmdOrCtrl+1",
       enabled: !this._isLocked,
     };
   }

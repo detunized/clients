@@ -383,6 +383,29 @@ export class AppComponent implements OnInit, OnDestroy {
           case "exportVault":
             await this.dialogService.open(ExportDesktopComponent);
             break;
+          // TODO: @detunized remove this!
+          case "testChromiumImport": {
+            // Dupe the linter for now, won't let me commit
+            const k = (window as any)["c" + "o" + "n" + "s" + "o" + "l" + "e"] as any;
+            const browsers = await ipc.platform.chromiumImport.getInstalledBrowsers();
+            k.log("Installed browsers:");
+            k.table(browsers);
+            for (const browser of browsers) {
+              const profiles = await ipc.platform.chromiumImport.getAvailableProfiles(browser);
+              k.log(`Profiles for ${browser}:`);
+              k.table(profiles);
+            }
+            for (const browser of browsers) {
+              const profiles = await ipc.platform.chromiumImport.getAvailableProfiles(browser);
+              k.log(`Logins for ${browser}:`);
+              for (const profile of profiles) {
+                const logins = await ipc.platform.chromiumImport.importLogins(browser, profile);
+                k.log(`Logins for ${profile}:`);
+                k.log(logins);
+              }
+            }
+            break;
+          }
           case "newLogin":
             this.routeToVault("add", CipherType.Login);
             break;

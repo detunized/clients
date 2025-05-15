@@ -53,6 +53,7 @@ import { ElectronStorageService } from "./platform/services/electron-storage.ser
 import { EphemeralValueStorageService } from "./platform/services/ephemeral-value-storage.main.service";
 import { I18nMainService } from "./platform/services/i18n.main.service";
 import { SSOLocalhostCallbackService } from "./platform/services/sso-localhost-callback.service";
+import { ChromiumImportService } from "./platform/services/chromium-import.service";
 import { ElectronMainMessagingService } from "./services/electron-main-messaging.service";
 import { isMacAppStore } from "./utils";
 
@@ -280,6 +281,8 @@ export class Main {
       this.messagingService,
       this.ssoUrlService,
     );
+
+    new ChromiumImportService();
 
     this.nativeAutofillMain = new NativeAutofillMain(this.logService, this.windowMain);
     void this.nativeAutofillMain.init();

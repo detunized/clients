@@ -1,10 +1,19 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+const fs = require("fs"); // TODO: @detunized remove this!
+
 const concurrently = require("concurrently");
 const rimraf = require("rimraf");
 
 const args = process.argv.splice(2);
 
 rimraf.sync("build");
+
+// TODO: @detunized remove this!
+fs.mkdirSync("build/Release", { recursive: true });
+fs.copyFileSync(
+  "../../node_modules/sqlite3/build/Release/node_sqlite3.node",
+  "./build/Release/node_sqlite3.node",
+);
 
 concurrently(
   [

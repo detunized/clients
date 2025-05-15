@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { promisify } from "util";
 
-import * as Database from "better-sqlite3";
+import * as sqlite3 from "sqlite3";
 
 import { passwords } from "@bitwarden/desktop-napi";
 
@@ -15,10 +15,17 @@ class windows_crypto {
   }
 }
 
-type BrowserConfig = {
+export type BrowserConfig = {
   name: string;
   company: string;
   product: string;
+};
+
+export type ProfileInfo = {
+  name: string;
+  accountName: string;
+  accountEmail: string;
+  folder: string;
 };
 
 type LocalState = {
@@ -36,11 +43,11 @@ type LocalState = {
   };
 };
 
-type ProfileInfo = {
-  name: string;
-  accountName: string;
-  accountEmail: string;
-  folder: string;
+type EncryptedLoginSqlite = {
+  url: string;
+  username: string;
+  encryptedPasswordHex: string;
+  encryptedNoteHex: string;
 };
 
 type EncryptedLogin = {
@@ -380,30 +387,75 @@ function getProfileInfo(localState: LocalState): ProfileInfo[] {
   }));
 }
 
-function queryLogins(dbPath: string): EncryptedLogin[] {
-  const db = new Database(dbPath, { readonly: true });
+async function queryLogins(dbPath: string): Promise<EncryptedLogin[]> {
+  // TODO: There's a lot of promisification going on in this function. Would be good to abstract it away.
+
+  const db = await new Promise<sqlite3.Database>((resolve, reject) => {
+    const database = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err: Error | null) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(database);
+      }
+    });
+  });
+
   try {
-    const rows = db
-      .prepare(
-        `
-      SELECT
-        l.origin_url          AS url,
-        l.username_value      AS username,
-        hex(l.password_value) AS encryptedPassword,
-        hex(pn.value)         AS encryptedNote
-      FROM
-        logins l
-      LEFT JOIN
-        password_notes pn ON l.id = pn.parent_id
-      WHERE
-        l.blacklisted_by_user = 0
-    `,
-      )
-      .all();
-    return rows.map(ensureValidLogin);
+    const haveLogins = await doesTableExist(db, "logins");
+    const havePasswordNotes = await doesTableExist(db, "password_notes");
+
+    if (!haveLogins || !havePasswordNotes) {
+      return [];
+    }
+
+    const logins = await new Promise<EncryptedLoginSqlite[]>((resolve, reject) => {
+      db.serialize(() => {
+        db.all<EncryptedLoginSqlite>(
+          `
+        SELECT
+          l.origin_url          AS url,
+          l.username_value      AS username,
+          hex(l.password_value) AS encryptedPasswordHex,
+          hex(pn.value)         AS encryptedNoteHex
+        FROM
+          logins l
+        LEFT JOIN
+          password_notes pn ON l.id = pn.parent_id
+        WHERE
+          l.blacklisted_by_user = 0
+      `,
+          (err, rows) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(rows);
+            }
+          },
+        );
+      });
+    });
+
+    return logins.map(ensureValidLogin);
   } finally {
     db.close();
   }
+}
+
+async function doesTableExist(db: sqlite3.Database, tableName: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve, reject) => {
+    db.serialize(() => {
+      db.get(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}'`,
+        (err, row) => {
+          if (err) {
+            resolve(false);
+          } else {
+            resolve(!!row);
+          }
+        },
+      );
+    });
+  });
 }
 
 function ensureValidLogin(login: any): EncryptedLogin {
@@ -458,7 +510,7 @@ async function getLogins(
   }
 
   try {
-    return queryLogins(tmpDbPath);
+    return await queryLogins(tmpDbPath);
   } finally {
     await deleteFile(tmpDbPath);
   }
