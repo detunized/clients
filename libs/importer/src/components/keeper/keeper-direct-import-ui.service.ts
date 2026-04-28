@@ -1,5 +1,6 @@
 import { Injectable, inject, signal } from "@angular/core";
 
+import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
 import { DialogRef, DialogService } from "@bitwarden/components";
 
 import {
@@ -21,7 +22,7 @@ export type KeeperAuthStage =
   | {
       kind: "approvalCode";
       method: DeviceApprovalChannel;
-      variant: "email" | "push";
+      variant: "email" | "push" | "admin";
     }
   | { kind: "selectTwoFactor"; methods: TwoFactorMethod[] }
   | { kind: "twoFactorCode"; method: TwoFactorMethod; needsInput: boolean }
@@ -30,6 +31,7 @@ export type KeeperAuthStage =
   | { kind: "selectDna"; methods: DnaMethod[] }
   | { kind: "dnaPush" }
   | { kind: "password" }
+  | { kind: "ssoToken" }
   | { kind: "error"; message: string };
 
 type PendingResolver = (value: unknown) => void;
@@ -39,6 +41,7 @@ type PendingResolver = (value: unknown) => void;
 })
 export class KeeperDirectImportUIService implements Ui {
   private readonly dialogService = inject(DialogService);
+  private readonly platformUtilsService = inject(PlatformUtilsService);
 
   private readonly _stage = signal<KeeperAuthStage>({ kind: "idle" });
 
@@ -125,7 +128,18 @@ export class KeeperDirectImportUIService implements Ui {
     method: DeviceApprovalChannel,
     _info?: string,
   ): Promise<string | typeof Cancel | typeof Resend | typeof TryAnother> {
-    const variant = method === DeviceApprovalChannel.Email ? "email" : "push";
+    let variant: "email" | "push" | "admin";
+    switch (method) {
+      case DeviceApprovalChannel.Email:
+        variant = "email";
+        break;
+      case DeviceApprovalChannel.AdminApproval:
+        variant = "admin";
+        break;
+      default:
+        variant = "push";
+        break;
+    }
 
     this.setStage({ kind: "approvalCode", method, variant });
     return this.waitForUser<string | typeof Cancel | typeof Resend | typeof TryAnother>();
@@ -240,6 +254,20 @@ export class KeeperDirectImportUIService implements Ui {
   async promptForPassword(): Promise<string | typeof Cancel> {
     this.setStage({ kind: "password" });
     return this.waitForUser<string | typeof Cancel>();
+  }
+
+  //
+  // Cloud SSO flow
+  //
+
+  async ssoLogin(url: string): Promise<string | typeof Cancel> {
+    this.platformUtilsService.launchUri(url);
+    this.setStage({ kind: "ssoToken" });
+    return this.waitForUser<string | typeof Cancel>();
+  }
+
+  closeSsoDialog(): void {
+    // No-op — see closeApprovalDialog.
   }
 
   //

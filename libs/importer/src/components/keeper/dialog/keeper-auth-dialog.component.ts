@@ -53,6 +53,10 @@ export class KeeperAuthDialogComponent {
     nonNullable: true,
     validators: [Validators.required],
   });
+  protected readonly ssoTokenControl = new FormControl("", {
+    nonNullable: true,
+    validators: [Validators.required],
+  });
   protected readonly approvalMethodControl = new FormControl<DeviceApprovalChannel | null>(null);
 
   constructor() {
@@ -106,6 +110,15 @@ export class KeeperAuthDialogComponent {
     this.keeperUi.submit(password);
   }
 
+  protected submitSsoToken(): void {
+    const token = this.ssoTokenControl.value.trim();
+    if (!token) {
+      return;
+    }
+    this.ssoTokenControl.reset("");
+    this.keeperUi.submit(token);
+  }
+
   protected tryAnother(): void {
     this.keeperUi.tryAnother();
   }
@@ -126,15 +139,19 @@ export class KeeperAuthDialogComponent {
         return "keeperPush";
       case DeviceApprovalChannel.TwoFactor:
         return "twoFactorAuthentication";
+      case DeviceApprovalChannel.AdminApproval:
+        return "adminApproval";
       default:
         return "email";
     }
   }
 
-  protected getApprovalCodeDescription(variant: "email" | "push"): string {
+  protected getApprovalCodeDescription(variant: "email" | "push" | "admin"): string {
     switch (variant) {
       case "push":
         return "otherDeviceApprovalPushDesc";
+      case "admin":
+        return "adminDeviceApprovalPushDesc";
       case "email":
       default:
         return "approvalEmailDesc";

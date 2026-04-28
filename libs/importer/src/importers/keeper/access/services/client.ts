@@ -13,7 +13,9 @@ import {
   ApiRequestPayloadSchema,
   DeviceSchema,
   DeviceRegistrationRequestSchema,
+  DeviceStatus,
   DeviceVerificationRequestSchema,
+  DeviceVerificationResponseSchema,
   EncryptedDataKeyType,
   LoginMethod,
   type LoginResponse,
@@ -32,6 +34,11 @@ import {
   ValidateDeviceVerificationCodeRequestSchema,
 } from "../generated/api-request_pb";
 import {
+  type SsoCloudResponse,
+  SsoCloudRequestSchema,
+  SsoCloudResponseSchema,
+} from "../generated/ssocloud_pb";
+import {
   SyncDownRequestSchema,
   type SyncDownResponse,
   SyncDownResponseSchema,
@@ -48,6 +55,7 @@ import { Cancel, Resend, TryAnother, Ui } from "../ui";
 
 import {
   base64UrlDecode,
+  base64UrlEncode,
   decryptAesV2,
   decryptEc,
   decryptEncryptionParams,
@@ -71,6 +79,7 @@ export class Client {
   private serverKeyId: number = 7;
   private readonly locale: string = "en_US";
   private password: string | null = null;
+  private ssoTransmissionKey: Uint8Array | null = null;
 
   constructor(options: ClientOptions) {
     this.server = options.region;
@@ -128,7 +137,23 @@ export class Client {
               messageSessionUid,
               response,
               socket,
+              [DeviceApprovalChannel.Email, DeviceApprovalChannel.KeeperPush],
             );
+            break;
+
+          case LoginState.REQUIRES_DEVICE_ENCRYPTED_DATA_KEY:
+            response = await this.handleDeviceApproval(
+              username,
+              deviceToken,
+              messageSessionUid,
+              response,
+              socket,
+              [DeviceApprovalChannel.KeeperPush, DeviceApprovalChannel.AdminApproval],
+            );
+            break;
+
+          case LoginState.REDIRECT_CLOUD_SSO:
+            response = await this.handleCloudSso(response, deviceToken, messageSessionUid);
             break;
 
           case LoginState.REQUIRES_2FA:
@@ -283,6 +308,105 @@ export class Client {
     return await this.validateAuthHash(authHash, response.encryptedLoginToken);
   }
 
+  private async handleCloudSso(
+    response: LoginResponse,
+    deviceToken: Uint8Array,
+    messageSessionUid: Uint8Array,
+  ): Promise<LoginResponse> {
+    if (!response.url) {
+      throw new Error("Cloud SSO redirect without URL");
+    }
+
+    const ssoUrl = await this.buildCloudSsoUrl(response.url, messageSessionUid);
+    const tokenOrCancel = await this.ui.ssoLogin(ssoUrl);
+    if (tokenOrCancel === Cancel) {
+      throw new Error("SSO authentication cancelled by user");
+    }
+
+    const ssoResponse = await this.decryptCloudSsoResponse(tokenOrCancel);
+    if (ssoResponse.encryptedLoginToken.length === 0) {
+      throw new Error("SSO response missing login token");
+    }
+
+    this.ui.closeSsoDialog();
+
+    return await this.resumeLoginAfterSso(
+      ssoResponse.encryptedLoginToken,
+      deviceToken,
+      messageSessionUid,
+    );
+  }
+
+  private async buildCloudSsoUrl(
+    ssoBaseUrl: string,
+    messageSessionUid: Uint8Array,
+  ): Promise<string> {
+    const ssoRequest = create(SsoCloudRequestSchema, {
+      messageSessionUid,
+      clientVersion: this.clientVersion,
+      detached: true,
+      dest: "vault",
+    });
+
+    const ssoRequestBytes = toBinary(SsoCloudRequestSchema, ssoRequest);
+
+    const payload = create(ApiRequestPayloadSchema, {
+      payload: ssoRequestBytes,
+    });
+
+    this.ssoTransmissionKey = generateEncryptionKey();
+
+    const payloadBytes = toBinary(ApiRequestPayloadSchema, payload);
+    const encryptedPayload = await encryptAesV2(
+      new Uint8Array(payloadBytes),
+      this.ssoTransmissionKey,
+    );
+    const encryptedKey = await encryptWithKeeperKey(this.ssoTransmissionKey, this.serverKeyId);
+
+    const apiRequest = create(ApiRequestSchema, {
+      encryptedTransmissionKey: encryptedKey,
+      publicKeyId: this.serverKeyId,
+      locale: this.locale,
+      encryptedPayload,
+    });
+
+    const apiRequestBytes = toBinary(ApiRequestSchema, apiRequest);
+    const encodedPayload = base64UrlEncode(new Uint8Array(apiRequestBytes));
+
+    return ssoBaseUrl + "?payload=" + encodedPayload;
+  }
+
+  private async decryptCloudSsoResponse(token: string): Promise<SsoCloudResponse> {
+    if (!this.ssoTransmissionKey) {
+      throw new Error("SSO transmission key not available");
+    }
+
+    const encryptedBytes = base64UrlDecode(token);
+    const decryptedBytes = await decryptAesV2(encryptedBytes, this.ssoTransmissionKey);
+    return fromBinary(SsoCloudResponseSchema, decryptedBytes);
+  }
+
+  private async resumeLoginAfterSso(
+    encryptedLoginToken: Uint8Array,
+    deviceToken: Uint8Array,
+    messageSessionUid: Uint8Array,
+  ): Promise<LoginResponse> {
+    const request = create(StartLoginRequestSchema, {
+      encryptedLoginToken,
+      encryptedDeviceToken: deviceToken,
+      loginMethod: LoginMethod.AFTER_SSO,
+      clientVersion: this.clientVersion,
+      messageSessionUid,
+    });
+
+    const responseBytes = await this.apiRequest(
+      "authentication/start_login",
+      request,
+      StartLoginRequestSchema,
+    );
+    return fromBinary(LoginResponseSchema, responseBytes);
+  }
+
   private async extractLoginResult(
     response: LoginResponse,
     devicePrivateKey: CryptoKey,
@@ -327,6 +451,7 @@ export class Client {
     messageSessionUid: Uint8Array,
     response: LoginResponse,
     socket: SocketListener,
+    channels: DeviceApprovalChannel[],
   ): Promise<LoginResponse> {
     const currentLoginToken = response.encryptedLoginToken;
 
@@ -337,11 +462,7 @@ export class Client {
 
     while (true) {
       const method = this.throwIfCancel(
-        await this.ui.selectApprovalMethod([
-          DeviceApprovalChannel.Email,
-          DeviceApprovalChannel.KeeperPush,
-          DeviceApprovalChannel.TwoFactor,
-        ]),
+        await this.ui.selectApprovalMethod(channels),
         "Device approval",
       );
 
@@ -369,6 +490,9 @@ export class Client {
             response.encryptedLoginToken,
             TwoFactorPushType.TWO_FA_PUSH_KEEPER,
           );
+          break;
+        case DeviceApprovalChannel.AdminApproval:
+          await this.requestDeviceAdminApproval(username, deviceToken, messageSessionUid);
           break;
         default:
           throw new Error("Unsupported device approval method selected");
@@ -399,6 +523,18 @@ export class Client {
             "Device approval",
           );
           break;
+        case DeviceApprovalChannel.AdminApproval:
+          approvalResult = this.throwIfCancel(
+            await Promise.race([
+              this.ui.provideApprovalCode(
+                method,
+                "Waiting for admin to approve the device request",
+              ),
+              socketMessagePromise,
+            ]),
+            "Device approval",
+          );
+          break;
         default:
           throw new Error("Unsupported device approval method");
       }
@@ -417,13 +553,14 @@ export class Client {
         return await this.resumeLogin(currentLoginToken, deviceToken, messageSessionUid);
       } else if (typeof approvalResult === "object" && "messageType" in approvalResult) {
         const { messageType, message } = approvalResult as PushMessage;
-        if (
-          messageType === MessageType.SESSION &&
-          message.command === "device_verified" &&
-          message.username === username
-        ) {
-          this.ui.closeApprovalDialog();
-          return await this.resumeLogin(currentLoginToken, deviceToken, messageSessionUid);
+        if (messageType === MessageType.SESSION && message.username === username) {
+          if (
+            message.command === "device_verified" ||
+            (message.message === "device_approved" && message.approved === true)
+          ) {
+            this.ui.closeApprovalDialog();
+            return await this.resumeLogin(currentLoginToken, deviceToken, messageSessionUid);
+          }
         }
       }
 
@@ -450,6 +587,32 @@ export class Client {
       request,
       DeviceVerificationRequestSchema,
     );
+  }
+
+  private async requestDeviceAdminApproval(
+    username: string,
+    deviceToken: Uint8Array,
+    messageSessionUid: Uint8Array,
+  ): Promise<void> {
+    const request = create(DeviceVerificationRequestSchema, {
+      username,
+      encryptedDeviceToken: deviceToken,
+      clientVersion: this.clientVersion,
+      messageSessionUid,
+    });
+
+    const responseBytes = await this.apiRequest(
+      "authentication/request_device_admin_approval",
+      request,
+      DeviceVerificationRequestSchema,
+    );
+
+    if (responseBytes.length > 0) {
+      const response = fromBinary(DeviceVerificationResponseSchema, responseBytes);
+      if (response.deviceStatus === DeviceStatus.DEVICE_OK) {
+        return;
+      }
+    }
   }
 
   private async validateDeviceVerificationCode(username: string, code: string): Promise<void> {
@@ -973,9 +1136,8 @@ export class Client {
       case LoginState.UPGRADE:
         throw new Error(`Account upgrade required: ${message}`);
 
-      case LoginState.REDIRECT_CLOUD_SSO:
       case LoginState.REDIRECT_ONSITE_SSO:
-        throw new Error(`SSO authentication not supported: ${message}`);
+        throw new Error(`On-premises SSO authentication not supported: ${message}`);
 
       default:
         throw new Error(`Unhandled login state: ${state} - ${message}`);

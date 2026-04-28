@@ -17,10 +17,10 @@
         {{ "selectApprovalMethod" | i18n }}
       }
       @case ("approvalCode") {
-        @if (currentStage.variant === "push") {
-          {{ "keeperPendingApproval" | i18n }}
-        } @else {
+        @if (currentStage.variant === "email") {
           {{ "keeperDeviceApprovalRequired" | i18n }}
+        } @else {
+          {{ "keeperPendingApproval" | i18n }}
         }
       }
       @case ("selectTwoFactor") {
@@ -47,6 +47,9 @@
       }
       @case ("password") {
         {{ "masterPassword" | i18n }}
+      }
+      @case ("ssoToken") {
+        {{ "ssoAuthRequired" | i18n }}
       }
       @case ("error") {
         {{ "errorOccurred" | i18n }}
@@ -169,6 +172,16 @@
         </form>
       }
 
+      @case ("ssoToken") {
+        <p bitTypography="body2">{{ "keeperSsoDesc" | i18n }}</p>
+        <form (ngSubmit)="submitSsoToken()">
+          <bit-form-field class="!tw-mb-0">
+            <bit-label>{{ "ssoToken" | i18n }}</bit-label>
+            <input bitInput type="text" [formControl]="ssoTokenControl" appInputVerbatim />
+          </bit-form-field>
+        </form>
+      }
+
       @case ("error") {
         <bit-callout type="danger">
           {{ currentStage.message | i18n }}
@@ -229,6 +242,12 @@
 
       @case ("password") {
         <button bitButton buttonType="primary" type="button" (click)="submitPassword()">
+          {{ "continue" | i18n }}
+        </button>
+      }
+
+      @case ("ssoToken") {
+        <button bitButton buttonType="primary" type="button" (click)="submitSsoToken()">
           {{ "continue" | i18n }}
         </button>
       }
