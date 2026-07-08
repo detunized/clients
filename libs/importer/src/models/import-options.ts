@@ -10,6 +10,7 @@ export const featuredImportOptions = [
   { id: "dashlanecsv", name: "Dashlane (csv)" },
   { id: "firefoxcsv", name: "Firefox (csv)" },
   { id: "keepass2xml", name: "KeePass 2 (xml)" },
+  { id: "keeper", name: "Keeper" },
   { id: "lastpasscsv", name: "LastPass" },
   { id: "safaricsv", name: "Safari and macOS (csv)" },
   { id: "1password1pux", name: "1Password (1pux/json)" },
@@ -23,8 +24,7 @@ export const regularImportOptions = [
   { id: "dashlanejson", name: "Dashlane (json)" },
   { id: "roboformcsv", name: "RoboForm (csv)" },
   { id: "keepercsv", name: "Keeper (csv)" },
-  // Temporarily remove this option for the Feb release
-  // { id: "keeperjson", name: "Keeper (json)" },
+  { id: "keeperjson", name: "Keeper (json)" },
   { id: "enpasscsv", name: "Enpass (csv)" },
   { id: "enpassjson", name: "Enpass (json)" },
   { id: "protonpass", name: "ProtonPass (zip/json)" },

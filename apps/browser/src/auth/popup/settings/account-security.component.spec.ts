@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component, input } from "@angular/core";
 import { ComponentFixture, fakeAsync, TestBed, tick } from "@angular/core/testing";
 import { By } from "@angular/platform-browser";
 import { ActivatedRoute } from "@angular/router";
@@ -19,11 +19,8 @@ import { UserVerificationService } from "@bitwarden/common/auth/abstractions/use
 import { BillingAccountProfileStateService } from "@bitwarden/common/billing/abstractions";
 import { PhishingDetectionSettingsServiceAbstraction } from "@bitwarden/common/dirt/services/abstractions/phishing-detection-settings.service.abstraction";
 import { PinServiceAbstraction } from "@bitwarden/common/key-management/pin/pin.service.abstraction";
-import {
-  VaultTimeoutSettingsService,
-  VaultTimeoutStringType,
-  VaultTimeoutAction,
-} from "@bitwarden/common/key-management/vault-timeout";
+import { SharedUnlockSettingsService } from "@bitwarden/common/key-management/shared-unlock";
+import { VaultTimeoutSettingsService } from "@bitwarden/common/key-management/vault-timeout";
 import { ProfileResponse } from "@bitwarden/common/models/response/profile.response";
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
 import { EnvironmentService } from "@bitwarden/common/platform/abstractions/environment.service";
@@ -44,6 +41,7 @@ import {
   BiometricsStatus,
   KeyService,
 } from "@bitwarden/key-management";
+import { SessionTimeoutSettingsComponent } from "@bitwarden/key-management-ui";
 
 import { BrowserApi } from "../../../platform/browser/browser-api";
 import BrowserPopupUtils from "../../../platform/browser/browser-popup-utils";
@@ -59,6 +57,16 @@ import { AccountSecurityComponent } from "./account-security.component";
   template: ` <ng-content></ng-content>`,
 })
 class MockPopOutComponent {}
+
+@Component({
+  selector: "bit-session-timeout-settings",
+  standalone: true,
+  template: "",
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+class MockSessionTimeoutSettingsComponent {
+  readonly refreshTimeoutActionSettings = input<any>();
+}
 
 describe("AccountSecurityComponent", () => {
   let component: AccountSecurityComponent;
@@ -82,6 +90,7 @@ describe("AccountSecurityComponent", () => {
   const validationService = mock<ValidationService>();
   const vaultNudgesService = mock<NudgesService>();
   const vaultTimeoutSettingsService = mock<VaultTimeoutSettingsService>();
+  const sharedUnlockSettingsService = mock<SharedUnlockSettingsService>();
   const mockI18nService = mock<I18nService>();
 
   // Mock subjects to control the phishing detection observables
@@ -131,16 +140,17 @@ describe("AccountSecurityComponent", () => {
           useValue: mock<AutomaticUserConfirmationService>(),
         },
         { provide: ConfigService, useValue: configService },
+        { provide: SharedUnlockSettingsService, useValue: sharedUnlockSettingsService },
         { provide: VaultTimeoutSettingsService, useValue: vaultTimeoutSettingsService },
       ],
     })
       .overrideComponent(AccountSecurityComponent, {
         remove: {
-          imports: [PopOutComponent],
+          imports: [PopOutComponent, SessionTimeoutSettingsComponent],
           providers: [DialogService],
         },
         add: {
-          imports: [MockPopOutComponent],
+          imports: [MockPopOutComponent, MockSessionTimeoutSettingsComponent],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
       })
@@ -153,21 +163,15 @@ describe("AccountSecurityComponent", () => {
       }),
     );
     vaultNudgesService.showNudgeSpotlight$.mockReturnValue(of(false));
-    vaultTimeoutSettingsService.getVaultTimeoutByUserId$.mockReturnValue(
-      of(VaultTimeoutStringType.OnLocked),
-    );
-    vaultTimeoutSettingsService.getVaultTimeoutActionByUserId$.mockReturnValue(
-      of(VaultTimeoutAction.Lock),
-    );
-    vaultTimeoutSettingsService.getVaultTimeoutActionByUserId$.mockReturnValue(
-      of(VaultTimeoutAction.Lock),
-    );
-    vaultTimeoutSettingsService.availableVaultTimeoutActions$.mockReturnValue(of([]));
-    biometricStateService.promptAutomatically$ = of(false);
+    biometricStateService.promptAutomatically$.mockReturnValue(of(false));
     pinServiceAbstraction.isPinSet.mockResolvedValue(false);
     configService.getFeatureFlag$.mockReturnValue(of(false));
     billingService.hasPremiumPersonally$.mockReturnValue(of(true));
     mockI18nService.t.mockImplementation((key) => `${key}-used-i18n`);
+    platformUtilsService.isSafari.mockReturnValue(false);
+    platformUtilsService.isFirefox.mockReturnValue(false);
+    sharedUnlockSettingsService.allowSharingUnlockState$.mockReturnValue(of(true));
+    sharedUnlockSettingsService.setAllowSharingUnlockState.mockResolvedValue(undefined);
 
     policyService.policiesByType$.mockReturnValue(of([null]));
 
@@ -195,6 +199,38 @@ describe("AccountSecurityComponent", () => {
     await component.ngOnInit();
 
     await expect(firstValueFrom(component.pinEnabled$)).resolves.toBe(true);
+  });
+
+  describe("shared unlock description", () => {
+    it("uses the Safari-specific description key on Safari", () => {
+      platformUtilsService.isSafari.mockReturnValue(true);
+      platformUtilsService.isFirefox.mockReturnValue(false);
+
+      const safariFixture = TestBed.createComponent(AccountSecurityComponent);
+      const safariComponent = safariFixture.componentInstance;
+
+      expect(safariComponent.sharedUnlockDescriptionKey).toBe("sharedUnlockDescriptionSafari");
+    });
+
+    it("uses the Firefox-specific description key on Firefox", () => {
+      platformUtilsService.isSafari.mockReturnValue(false);
+      platformUtilsService.isFirefox.mockReturnValue(true);
+
+      const firefoxFixture = TestBed.createComponent(AccountSecurityComponent);
+      const firefoxComponent = firefoxFixture.componentInstance;
+
+      expect(firefoxComponent.sharedUnlockDescriptionKey).toBe("sharedUnlockDescriptionFirefox");
+    });
+
+    it("uses the generic description key on non-Safari and non-Firefox browsers", () => {
+      platformUtilsService.isSafari.mockReturnValue(false);
+      platformUtilsService.isFirefox.mockReturnValue(false);
+
+      const defaultFixture = TestBed.createComponent(AccountSecurityComponent);
+      const defaultComponent = defaultFixture.componentInstance;
+
+      expect(defaultComponent.sharedUnlockDescriptionKey).toBe("sharedUnlockDescription");
+    });
   });
 
   it("pin enabled when RemoveUnlockWithPin policy is disabled", async () => {
@@ -357,7 +393,10 @@ describe("AccountSecurityComponent", () => {
         await component.ngOnInit();
         await component.updateBiometric(false);
 
-        expect(biometricStateService.setBiometricUnlockEnabled).toHaveBeenCalledWith(false);
+        expect(biometricStateService.setBiometricUnlockEnabled).toHaveBeenCalledWith(
+          false,
+          mockUserId,
+        );
         expect(biometricStateService.setFingerprintValidated).toHaveBeenCalledWith(false);
       });
     });
@@ -441,6 +480,7 @@ describe("AccountSecurityComponent", () => {
         expect(keyService.refreshAdditionalKeys).toHaveBeenCalledWith(mockUserId);
         expect(biometricStateService.setBiometricUnlockEnabled).toHaveBeenCalledWith(
           setupBiometricsResult,
+          mockUserId,
         );
         expect(component.form.controls.biometric.value).toBe(setupBiometricsResult);
       });
@@ -454,6 +494,7 @@ describe("AccountSecurityComponent", () => {
 
         expect(biometricStateService.setBiometricUnlockEnabled).toHaveBeenCalledWith(
           setupBiometricsResult,
+          mockUserId,
         );
         expect(biometricStateService.setFingerprintValidated).toHaveBeenCalledWith(
           setupBiometricsResult,

@@ -15,14 +15,14 @@ import { action } from "storybook/actions";
 import { ViewCacheService } from "@bitwarden/angular/platform/view-cache";
 import { NudgeStatus, NudgesService } from "@bitwarden/angular/vault";
 import { AuditService } from "@bitwarden/common/abstractions/audit.service";
-import { EventCollectionService } from "@bitwarden/common/abstractions/event/event-collection.service";
 import { PolicyService } from "@bitwarden/common/admin-console/abstractions/policy/policy.service.abstraction";
 import { CollectionView } from "@bitwarden/common/admin-console/models/collections";
 import { Organization } from "@bitwarden/common/admin-console/models/domain/organization";
 import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
 import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
 import { DomainSettingsService } from "@bitwarden/common/autofill/services/domain-settings.service";
-import { ClientType } from "@bitwarden/common/enums";
+import { EventCollectionService } from "@bitwarden/common/dirt/event-logs";
+import { ClientType, DeviceType } from "@bitwarden/common/enums";
 import { UriMatchStrategy } from "@bitwarden/common/models/domain/domain-service";
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
 import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
@@ -34,16 +34,12 @@ import { CipherView } from "@bitwarden/common/vault/models/view/cipher.view";
 import { FolderView } from "@bitwarden/common/vault/models/view/folder.view";
 import { LoginView } from "@bitwarden/common/vault/models/view/login.view";
 import { AsyncActionsModule, ButtonModule, ItemModule, ToastService } from "@bitwarden/components";
-import {
-  CipherFormConfig,
-  CipherFormGenerationService,
-  PasswordRepromptService,
-} from "@bitwarden/vault";
 // FIXME: remove `/apps` import from `/libs`
 // FIXME: remove `src` and fix import
 // eslint-disable-next-line no-restricted-imports
 import { PreloadedEnglishI18nModule } from "@bitwarden/web-vault/src/app/core/tests";
 
+import { CipherFormConfig, CipherFormGenerationService, PasswordRepromptService } from "..";
 import { SshImportPromptService } from "../services/ssh-import-prompt.service";
 
 import { CipherFormService } from "./abstractions/cipher-form.service";
@@ -151,6 +147,7 @@ export default {
               hasBadgeDismissed: true,
               hasSpotlightDismissed: true,
             } as NudgeStatus),
+            showNudgeSpotlight$: () => new BehaviorSubject(false),
           },
         },
         {
@@ -234,6 +231,7 @@ export default {
           provide: PlatformUtilsService,
           useValue: {
             getClientType: () => ClientType.Browser,
+            getDevice: () => DeviceType.ChromeExtension,
           },
         },
         {
@@ -273,7 +271,7 @@ export default {
         {
           provide: PolicyService,
           useValue: {
-            policiesByType$: new BehaviorSubject([]),
+            policiesByType$: () => new BehaviorSubject([]),
           },
         },
         {

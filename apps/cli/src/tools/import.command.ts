@@ -63,11 +63,33 @@ export class ImportCommand {
     if (filepath == null || filepath === "") {
       return Response.badRequest("`filepath` was not provided.");
     }
+
+    // Lazy-load jsdom and polyfill DOMParser only when actually running an import.
+    // jsdom is heavy and only needed by the XML/HTML importers; loading it eagerly
+    // slows CLI startup for every other command.
+    const { JSDOM } = await import("jsdom");
+    global.DOMParser = new JSDOM().window.DOMParser;
+
     const promptForPassword_callback = async () => {
       return await this.promptPassword();
     };
+
+    // The web UI exposes the Keeper method via a dropdown
+    // The CLI infers it from the file extension when the user passes the unified `keeper` ID
+    let resolvedFormat: ImportType = format;
+    if (format === "keeper") {
+      const lower = filepath.toLowerCase();
+      if (lower.endsWith(".csv")) {
+        resolvedFormat = "keepercsv";
+      } else if (lower.endsWith(".json")) {
+        resolvedFormat = "keeperjson";
+      } else {
+        return Response.badRequest("Cannot determine Keeper file type. Use a .csv or .json file.");
+      }
+    }
+
     const importer = await this.importService.getImporter(
-      format,
+      resolvedFormat,
       promptForPassword_callback,
       organizationId,
     );

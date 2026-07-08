@@ -37,16 +37,13 @@ async function run(context) {
 
   if (["darwin", "mas"].includes(context.electronPlatformName)) {
     const is_mas = context.electronPlatformName === "mas";
-    const is_mas_dev = context.targets.some((e) => e.name === "mas-dev");
 
     let id;
 
     // Only use the Bitwarden Identities on CI
     if (process.env.GITHUB_ACTIONS === "true") {
       if (is_mas) {
-        id = is_mas_dev
-          ? "A579B6AE496B360642D05B8AB1B650C1B143B770"
-          : "3rd Party Mac Developer Application: Bitwarden Inc";
+        id = "3rd Party Mac Developer Application: Bitwarden Inc";
       } else {
         id = "Developer ID Application: Bitwarden Inc";
       }
@@ -154,7 +151,7 @@ async function addElectronFuses(context) {
   const IS_LINUX = platform === "linux";
   const executableName = IS_LINUX
     ? context.packager.appInfo.productFilename.toLowerCase().replace("-dev", "").replace(" ", "-")
-    : context.packager.appInfo.productFilename; // .toLowerCase() to accomodate Linux file named `name` but productFileName is `Name` -- Replaces '-dev' because on Linux the executable name is `name` even for the DEV builds
+    : context.packager.appInfo.productFilename; // .toLowerCase() to accommodate Linux file named `name` but productFileName is `Name` -- Replaces '-dev' because on Linux the executable name is `name` even for the DEV builds
 
   const electronBinaryPath = path.join(context.appOutDir, `${executableName}${ext}`);
 
@@ -187,5 +184,8 @@ async function addElectronFuses(context) {
     // This can be done by defining a custom app:// protocol and loading the bundle from there,
     // but then any requests to the server will be blocked by CORS policy
     [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+
+    // Enables V8 signal handlers to trap Out of Bounds memory access from WebAssembly
+    [FuseV1Options.WasmTrapHandlers]: true,
   });
 }

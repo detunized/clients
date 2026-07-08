@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, input, OnInit } from "@angular/core";
+import { Component, computed, DestroyRef, inject, input, OnInit } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { ActivatedRoute } from "@angular/router";
 import { lastValueFrom } from "rxjs";
@@ -10,15 +10,22 @@ import {
   RiskInsightsDataService,
 } from "@bitwarden/bit-common/dirt/reports/risk-insights";
 import { OrganizationService } from "@bitwarden/common/admin-console/abstractions/organization/organization.service.abstraction";
+import { FeatureFlag } from "@bitwarden/common/enums/feature-flag.enum";
+import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
 import { OrganizationId } from "@bitwarden/common/types/guid";
-import { DialogService } from "@bitwarden/components";
+import { DialogService, PopoverModule } from "@bitwarden/components";
 import { SharedModule } from "@bitwarden/web-vault/app/shared";
 
+import { AccessIntelligenceCoachmarkComponent } from "../onboarding/access-intelligence-coachmark.component";
+import { AccessIntelligenceCoachmarkService } from "../onboarding/access-intelligence-coachmark.service";
+import { RiskOverTimeService } from "../services/risk-over-time.service";
 import { ReportLoadingComponent } from "../shared/report-loading.component";
 
 import { ActivityCardComponent } from "./activity-card.component";
 import { PasswordChangeMetricComponent } from "./activity-cards/password-change-metric.component";
 import { NewApplicationsDialogComponent } from "./application-review-dialog/new-applications-dialog.component";
+import { TimePeriod, DEFAULT_TIME_PERIOD } from "./period-selector/period-selector.types";
+import { TrendWidgetComponent, TrendWidgetViewType } from "./trend-widget/trend-widget.component";
 
 // FIXME(https://bitwarden.atlassian.net/browse/CL-764): Migrate to OnPush
 // eslint-disable-next-line @angular-eslint/prefer-on-push-component-change-detection
@@ -29,6 +36,9 @@ import { NewApplicationsDialogComponent } from "./application-review-dialog/new-
     SharedModule,
     ActivityCardComponent,
     PasswordChangeMetricComponent,
+    PopoverModule,
+    AccessIntelligenceCoachmarkComponent,
+    TrendWidgetComponent,
   ],
   templateUrl: "./all-activity.component.html",
 })
@@ -49,8 +59,14 @@ export class AllActivityComponent implements OnInit {
   showNeedsReviewState = false;
 
   destroyRef = inject(DestroyRef);
+  private configService = inject(ConfigService);
 
+  protected trendChartEnabled = false;
   protected ReportStatusEnum = ReportStatus;
+
+  protected riskOverTimeData$ = this.riskOverTimeService.riskOverTimeData$;
+  protected isRiskOverTimeLoading$ = this.riskOverTimeService.isLoading$;
+  protected riskOverTimeError$ = this.riskOverTimeService.error$;
 
   constructor(
     protected activatedRoute: ActivatedRoute,
@@ -58,9 +74,23 @@ export class AllActivityComponent implements OnInit {
     protected dataService: RiskInsightsDataService,
     private dialogService: DialogService,
     protected organizationService: OrganizationService,
+    protected riskOverTimeService: RiskOverTimeService,
+    protected coachmarkService: AccessIntelligenceCoachmarkService,
   ) {}
 
   async ngOnInit(): Promise<void> {
+    this.trendChartEnabled = await this.configService.getFeatureFlag(
+      FeatureFlag.AccessIntelligenceTrendChart,
+    );
+
+    if (this.trendChartEnabled) {
+      this.riskOverTimeService.initialize(
+        this.organizationId(),
+        DEFAULT_TIME_PERIOD,
+        TrendWidgetViewType.Applications,
+      );
+    }
+
     this.allActivitiesService.reportSummary$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((summary) => {
@@ -135,6 +165,14 @@ export class AllActivityComponent implements OnInit {
       this.newApplicationsCount === this.totalApplicationCount;
   }
 
+  onTimespanChanged(timeframe: TimePeriod): void {
+    this.riskOverTimeService.setTimeframe(timeframe);
+  }
+
+  onViewChanged(dataView: TrendWidgetViewType): void {
+    this.riskOverTimeService.setDataView(dataView);
+  }
+
   /**
    * Handles the review new applications button click.
    * Opens a dialog showing the list of new applications that can be marked as critical.
@@ -174,4 +212,8 @@ export class AllActivityComponent implements OnInit {
   async onViewAtRiskApplications() {
     await this.dataService.setDrawerForCriticalAtRiskApps("activityTabAtRiskApplications");
   }
+
+  protected readonly prioritizeRisksOpen = computed(
+    () => this.coachmarkService.activeStepId() === "prioritizeRisks",
+  );
 }

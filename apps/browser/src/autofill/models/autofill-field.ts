@@ -68,6 +68,8 @@ export default class AutofillField {
 
   "label-data"?: string | null;
 
+  "aria-describedby"?: string | null;
+
   "aria-hidden"?: boolean;
 
   "aria-disabled"?: boolean;
@@ -96,9 +98,9 @@ export default class AutofillField {
    */
   readonly?: boolean;
   /**
-   * The `opid` attribute value of the form that contains the field
+   * The `opid` attribute value of the form that contains the field, null if no form or opid is absent
    */
-  form?: string;
+  form?: string | null;
   /**
    * The `x-autocompletetype`, `autocompletetype`, or `autocomplete` attribute for the field
    */
@@ -124,6 +126,11 @@ export default class AutofillField {
 
   fieldQualifier?: AutofillFieldQualifierType;
 
+  /**
+   * Indicates this field was qualified by targeting rules rather than heuristics
+   */
+  targeted?: boolean;
+
   accountCreationFieldType?: InlineMenuAccountCreationFieldTypes;
 
   /**
@@ -131,3 +138,6 @@ export default class AutofillField {
    */
   fieldRect?: FieldRect;
 }
+
+/** `readonly` / `disabled` from collected field data; a full {@link AutofillField} is assignable. */
+export type AutofillFieldReadonlyDisabledState = Pick<AutofillField, "readonly" | "disabled">;

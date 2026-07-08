@@ -1,3 +1,14 @@
+@if (showBatchBar()) {
+  <td bitCell [ngClass]="RowHeightClass" class="tw-w-10">
+    <input
+      type="checkbox"
+      bitCheckbox
+      [checked]="selected()"
+      (change)="checkboxChange.emit()"
+      [attr.aria-label]="collection().name"
+    />
+  </td>
+}
 <td bitCell [ngClass]="RowHeightClass">
   <div class="tw-flex tw-gap-3">
     <div aria-hidden="true">
@@ -20,7 +31,6 @@
       [routerLink]="[]"
       [queryParams]="{ collectionId: collection().id }"
       queryParamsHandling="merge"
-      appStopProp
     >
       <span class="tw-truncate tw-mr-1">{{ collection().name }}</span>
     </button>
@@ -32,7 +42,6 @@
       [disabled]="disabled()"
       [organizationId]="collection().organizationId"
       [organizationName]="collection().organizationId | orgNameFromId: organizations()"
-      appStopProp
     >
     </app-org-badge>
   </td>

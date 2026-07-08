@@ -7,6 +7,7 @@ import {
   DestroyRef,
   EventEmitter,
   Inject,
+  input,
   Input,
   OnDestroy,
   OnInit,
@@ -16,6 +17,7 @@ import {
 } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { Router } from "@angular/router";
 import * as JSZip from "jszip";
 import {
   Observable,
@@ -69,6 +71,9 @@ import {
   LinkModule,
 } from "@bitwarden/components";
 
+import { Importer } from "../importers/importer";
+import { KeeperCsvImporter } from "../importers/keeper/keeper-csv-importer";
+import { KeeperJsonImporter } from "../importers/keeper/keeper-json-importer";
 import { ImporterMetadata, DataLoader, Loader, Instructions } from "../metadata";
 import { ImportOption, ImportResult, ImportType } from "../models";
 import {
@@ -82,8 +87,10 @@ import {
   FilePasswordPromptComponent,
   ImportErrorDialogComponent,
   ImportSuccessDialogComponent,
+  ImportSuccessDialogData,
 } from "./dialog";
 import { ImporterProviders } from "./importer-providers";
+import { ImportKeeperComponent, defaultKeeperImportMethod } from "./keeper";
 import { ImportLastPassComponent } from "./lastpass";
 
 // FIXME(https://bitwarden.atlassian.net/browse/CL-764): Migrate to OnPush
@@ -103,6 +110,7 @@ import { ImportLastPassComponent } from "./lastpass";
     ReactiveFormsModule,
     ImportChromeComponent,
     ImportLastPassComponent,
+    ImportKeeperComponent,
     RadioButtonModule,
     CardComponent,
     SectionHeaderComponent,
@@ -171,6 +179,8 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
   @Input()
   onImportFromBrowser: (browser: string, profile: string) => Promise<any[]>;
 
+  protected readonly returnTo = input<string | undefined>(undefined);
+
   protected organization: Organization | undefined = undefined;
   protected destroy$ = new Subject<void>();
 
@@ -203,6 +213,11 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
   // eslint-disable-next-line @angular-eslint/prefer-signals
   @ViewChild(BitSubmitDirective)
   private bitSubmit: BitSubmitDirective;
+
+  // FIXME(https://bitwarden.atlassian.net/browse/CL-903): Migrate to Signals
+  // eslint-disable-next-line @angular-eslint/prefer-signals
+  @ViewChild(ImportKeeperComponent)
+  private importKeeper?: ImportKeeperComponent;
 
   // FIXME(https://bitwarden.atlassian.net/browse/CL-903): Migrate to Signals
   // eslint-disable-next-line @angular-eslint/prefer-output-emitter-ref
@@ -269,6 +284,7 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
     private restrictedItemTypesService: RestrictedItemTypesService,
     private destroyRef: DestroyRef,
     protected importMetadataService: ImportMetadataServiceAbstraction,
+    private router: Router,
   ) {}
 
   protected get importBlockedByPolicy(): boolean {
@@ -284,6 +300,33 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   protected get showLastPassOptions(): boolean {
     return this.showLastPassToggle && this.formGroup.controls.lastPassType.value === "direct";
+  }
+
+  protected get isKeeperFormat(): boolean {
+    return this.format === "keeper";
+  }
+
+  protected get keeperMethod(): "direct" | "csv" | "json" | undefined {
+    const subgroup = this.formGroup.get("keeperOptions");
+    // Default before import-keeper registers keeperOptions, or the @if below throws NG0100.
+    return subgroup?.get("method")?.value ?? defaultKeeperImportMethod(this.platformUtilsService);
+  }
+
+  // Factory only exposes "keeper"; csv/json variants are picked from the Method dropdown.
+  private resolveKeeperFileImporter(): Importer {
+    let importer: Importer;
+    switch (this.keeperMethod) {
+      case "csv":
+        importer = new KeeperCsvImporter();
+        break;
+      case "json":
+        importer = new KeeperJsonImporter();
+        break;
+      default:
+        throw new Error(`Unsupported Keeper method for file import: ${this.keeperMethod}`);
+    }
+    importer.organizationId = this.organizationId;
+    return importer;
   }
 
   async ngOnInit() {
@@ -383,6 +426,10 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
         // Set organizationId for org imports, undefined for personal vault
         this.organizationId = value !== "myVault" ? value : undefined;
 
+        // Clear any previously selected target since folders and collections are not interchangeable
+        // across personal vault and organization destinations.
+        this.formGroup.controls.targetSelector.setValue(null);
+
         // Enable targetSelector for both personal vault (folders) and org vault (collections)
         // Note: The template switches between showing folders vs collections based on organizationId
         this.formGroup.controls.targetSelector.enable();
@@ -470,6 +517,14 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
       return;
     }
 
+    // Keeper direct method runs its own login/import flow and emits the result
+    // via importCompleted. Csv/Json fall through to performImport() with an
+    // effective format of keepercsv/keeperjson.
+    if (this.isKeeperFormat && this.keeperMethod === "direct") {
+      await this.importKeeper?.submitDirect(this.organizationId);
+      return;
+    }
+
     await this.performImport();
   };
 
@@ -490,11 +545,13 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
       return await this.getFilePassword();
     };
 
-    const importer = this.importService.getImporter(
-      this.format,
-      promptForPassword_callback,
-      this.organizationId,
-    );
+    const importer = this.isKeeperFormat
+      ? this.resolveKeeperFileImporter()
+      : this.importService.getImporter(
+          this.format,
+          promptForPassword_callback,
+          this.organizationId,
+        );
 
     if (importer === null) {
       this.toastService.showToast({
@@ -516,18 +573,45 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
       return;
     }
 
-    try {
-      const result = await this.importService.import(
+    await this.doImport(async () =>
+      this.importService.import(
         importer,
         importContents,
         this.organizationId,
         this.formGroup.controls.targetSelector.value,
         this.organization?.canAccessImport && this.isFromAC,
-      );
+      ),
+    );
+  }
+
+  protected async performDirectImport(result: ImportResult) {
+    if (!(await this.validateImport())) {
+      return;
+    }
+
+    await this.doImport(async () =>
+      this.importService.importImportResult(
+        result,
+        this.organizationId,
+        this.formGroup.controls.targetSelector.value,
+        this.organization?.canAccessImport && this.isFromAC,
+      ),
+    );
+  }
+
+  private async doImport(importFunc: () => Promise<ImportResult>): Promise<void> {
+    try {
+      const result = await importFunc();
 
       //No errors, display success message
-      this.dialogService.open<unknown, ImportResult>(ImportSuccessDialogComponent, {
-        data: result,
+      const returnDestination = this.returnTo()
+        ? this.resolveReturnDestination(this.returnTo())
+        : undefined;
+      this.dialogService.open<unknown, ImportSuccessDialogData>(ImportSuccessDialogComponent, {
+        data: {
+          importResult: result,
+          ...returnDestination,
+        },
       });
 
       // FIXME: Verify that this floating promise is intentional. If it is, add an explanatory comment and ensure there is proper error handling.
@@ -556,10 +640,25 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
     return null;
   }
 
+  protected handleChromeImportError(error: string) {
+    this.toastService.showToast({
+      variant: "error",
+      title: this.i18nService.t("errorOccurred"),
+      message: error,
+    });
+  }
+
   protected setImportOptions() {
     this.featuredImportOptions = [...this.importService.featuredImportOptions];
 
-    this.importOptions = [...this.importService.regularImportOptions].sort((a, b) => {
+    // The unified `keeper` entry covers csv/json via the Method dropdown,
+    // so hide the standalone variants from the UI. They remain in the option
+    // list for non-UI consumers (CLI) and for backward compatibility.
+    const visibleRegularOptions = this.importService.regularImportOptions.filter(
+      (o) => o.id !== "keepercsv" && o.id !== "keeperjson",
+    );
+
+    this.importOptions = [...visibleRegularOptions].sort((a, b) => {
       if (a.name == null && b.name != null) {
         return -1;
       }
@@ -693,5 +792,25 @@ export class ImportComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  protected resolveReturnDestination(
+    returnTo: string,
+  ): { returnUrl: string; returnLabel: string } | undefined {
+    if (!this.organizationId) {
+      return undefined;
+    }
+    const destinations: Record<string, () => { returnUrl: string; returnLabel: string }> = {
+      "access-intelligence": () => ({
+        returnUrl: this.router.serializeUrl(
+          this.router.createUrlTree(
+            ["/organizations", this.organizationId, "access-intelligence"],
+            { queryParams: { source: "import", status: "success" } },
+          ),
+        ),
+        returnLabel: this.i18nService.t("goToAccessIntelligence"),
+      }),
+    };
+    return destinations[returnTo]?.();
   }
 }
