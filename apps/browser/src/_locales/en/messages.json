@@ -5703,6 +5703,27 @@
   "onePasswordVaultSaveFailed": {
     "message": "Your 1Password account was downloaded, but saving it to your vault failed. Try the import again"
   },
+  "onePasswordPartialImport": {
+    "message": "$COUNT$ 1Password items or vaults could not be imported",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "onePasswordSignInAddress": {
+    "message": "Sign-in address"
+  },
+  "onePasswordDomain": {
+    "message": "1Password domain"
+  },
+  "onePasswordEmail": {
+    "message": "1Password email"
+  },
+  "onePasswordEmailHint": {
+    "message": "Enter the email you use to log in to 1Password"
+  },
   "onePasswordSecretKey": {
     "message": "Secret key"
   },
