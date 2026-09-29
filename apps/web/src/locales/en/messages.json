@@ -17042,6 +17042,39 @@
       }
     }
   },
+  "onePasswordBadCredentials": {
+    "message": "Incorrect sign-in address, email, password, or Secret Key"
+  },
+  "onePasswordInvalidSignInAddress": {
+    "message": "That 1Password sign-in address is not valid"
+  },
+  "onePasswordInvalidSecretKey": {
+    "message": "That 1Password Secret Key is not valid"
+  },
+  "onePasswordUnsupportedAccount": {
+    "message": "This 1Password account uses a sign-in method the importer does not support yet"
+  },
+  "onePasswordImportFailed": {
+    "message": "Could not import from 1Password. Check the details you entered and your connection, then try again"
+  },
+  "onePasswordDecryptionFailed": {
+    "message": "The data 1Password returned could not be read. Try the import again"
+  },
+  "onePasswordVaultSaveFailed": {
+    "message": "Your 1Password account was downloaded, but saving it to your vault failed. Try the import again"
+  },
+  "onePasswordSecretKey": {
+    "message": "Secret key"
+  },
+  "onePasswordSecretKeyAndPassword": {
+    "message": "Secret key and password"
+  },
+  "onePasswordSecretKeyAndPasswordDesc": {
+    "message": "Your account is secured with a Secret Key and password. You will need to enter both to continue."
+  },
+  "onePasswordTwoFactorDesc": {
+    "message": "Enter the code sent to your authentication app"
+  },
   "keeperEmail": {
     "message": "Keeper email"
   },
