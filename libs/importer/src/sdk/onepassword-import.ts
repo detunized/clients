@@ -1,8 +1,13 @@
 import {
   Credentials as OnePasswordCredentials,
   OnePasswordImportSummary,
+  OnePasswordSsoEnrollment,
+  OnePasswordSsoEnrollmentResult,
+  OnePasswordSsoEnrollmentStatus,
+  OnePasswordSsoUi,
   OnePasswordTwoFactorUi,
   SignInDomain as OnePasswordSignInDomain,
+  SsoCredentials as OnePasswordSsoCredentials,
   isImportError,
 } from "@bitwarden/sdk-internal";
 
@@ -10,6 +15,11 @@ export {
   OnePasswordCredentials,
   OnePasswordImportSummary,
   OnePasswordSignInDomain,
+  OnePasswordSsoCredentials,
+  OnePasswordSsoEnrollment,
+  OnePasswordSsoEnrollmentResult,
+  OnePasswordSsoEnrollmentStatus,
+  OnePasswordSsoUi,
   OnePasswordTwoFactorUi,
 };
 
@@ -18,6 +28,13 @@ export interface OnePasswordImportRequest {
   credentials: OnePasswordCredentials;
   /** Asked for a passcode when the account has two-step verification enabled. */
   twoFactorUi: OnePasswordTwoFactorUi;
+}
+
+/** Everything a direct 1Password import with single sign-on needs from the caller. */
+export interface OnePasswordSsoImportRequest {
+  credentials: OnePasswordSsoCredentials;
+  /** Takes the user through the identity provider login and the approval of a new device. */
+  ui: OnePasswordSsoUi;
 }
 
 /**
@@ -44,11 +61,12 @@ export interface OnePasswordErrorDisplay {
 }
 
 /**
- * Where and how to show a failed 1Password import. What the user entered is marked on its field;
- * everything else, from a lost connection to a vault that could not be saved, is out of their
- * hands and shown as the same toast.
+ * Where and how to show a failed 1Password import, or `undefined` when the user canceled it and
+ * there is nothing to show. What the user entered is marked on its field; everything else, from a
+ * lost connection to a vault that could not be saved, is out of their hands and shown as the same
+ * toast.
  */
-export function onePasswordErrorDisplay(error: unknown): OnePasswordErrorDisplay {
+export function onePasswordErrorDisplay(error: unknown): OnePasswordErrorDisplay | undefined {
   if (!isImportError(error)) {
     return { messageKey: "onePasswordImportError" };
   }
@@ -61,9 +79,11 @@ export function onePasswordErrorDisplay(error: unknown): OnePasswordErrorDisplay
       return { field: "secretKey", messageKey: "enterValidSecretKey" };
     case "OnePasswordInvalidSignInAddress":
       return { field: "signInAddress", messageKey: "enterValidSignInAddress" };
-    // Mostly accounts that sign in with SSO, which the importer does not support yet.
+    // Mostly accounts that sign in with SSO, which the password method cannot import.
     case "OnePasswordUnsupported":
       return { field: "email", messageKey: "onePasswordOnlyPasswordLoginTryAgain" };
+    case "OnePasswordCanceled":
+      return undefined;
     default:
       return { messageKey: "onePasswordImportError" };
   }

@@ -6,6 +6,7 @@ import {
   inject,
   signal,
 } from "@angular/core";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import {
   ControlContainer,
   FormBuilder,
@@ -34,6 +35,8 @@ import {
   OnePasswordDirectImportService,
 } from "./onepassword-direct-import.service";
 import { onePasswordSignInDomains } from "./onepassword-sign-in-domains";
+import { OnePasswordSignInMethod, onePasswordSignInMethods } from "./onepassword-sign-in-methods";
+import { OnePasswordSsoBrowser } from "./onepassword-sso-browser";
 import {
   requiredWithMessage,
   subdomainWithMessage,
@@ -68,15 +71,21 @@ export class ImportOnePasswordComponent implements OnInit, OnDestroy {
   private readonly i18nService = inject(I18nService);
   private readonly toastService = inject(ToastService);
   private readonly onePasswordDirectImportService = inject(OnePasswordDirectImportService);
+  private readonly onePasswordSsoBrowser = inject(OnePasswordSsoBrowser);
 
   private readonly parentFormGroup = signal<FormGroup | null>(null);
 
   protected readonly domains = onePasswordSignInDomains;
+  protected readonly signInMethods = onePasswordSignInMethods;
+  protected readonly ssoSupported = this.onePasswordSsoBrowser.supported;
 
   private readonly rejection = signal<Rejection | undefined>(undefined);
 
   protected readonly formGroup = this.formBuilder.group(
     {
+      signInMethod: this.formBuilder.nonNullable.control<OnePasswordSignInMethod>("password", {
+        updateOn: "change",
+      }),
       email: this.formBuilder.nonNullable.control("", [
         requiredWithMessage(this.i18nService.t("emailIsRequired")),
         Validators.required,
@@ -97,6 +106,14 @@ export class ImportOnePasswordComponent implements OnInit, OnDestroy {
     { updateOn: "submit" },
   );
 
+  // A refusal belongs to the sign-in method it came from: a password account is not an SSO one.
+  private readonly forgetRejectionOnSignInMethodChange =
+    this.formGroup.controls.signInMethod.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.rejection.set(undefined);
+      this.formGroup.controls.email.updateValueAndValidity();
+      this.formGroup.controls.subdomain.updateValueAndValidity();
+    });
+
   ngOnInit(): void {
     this.parentFormGroup.set(this.controlContainer.control as FormGroup);
     this.parentFormGroup()!.addControl("onepasswordOptions", this.formGroup);
@@ -109,9 +126,10 @@ export class ImportOnePasswordComponent implements OnInit, OnDestroy {
   /**
    * Signs in to 1Password through the SDK, which downloads, decrypts and submits the account, then
    * hands the summary to `onImported`. The Secret Key, password and two-factor code are asked for in
-   * dialogs along the way, which show the import's progress. A refused email or sign-in address is
-   * marked on its field, and any other failure is shown in a toast. The parent invokes this from its
-   * submit handler; 1Password direct has no file fallback to fall through to.
+   * dialogs along the way, which show the import's progress, or, for single sign-on, the identity
+   * provider and the approval of a new device. A refused email or sign-in address is marked on its
+   * field, and any other failure is shown in a toast. The parent invokes this from its submit
+   * handler; 1Password direct has no file fallback to fall through to.
    */
   async submitDirect(
     context: OnePasswordImportContext,
@@ -123,14 +141,23 @@ export class ImportOnePasswordComponent implements OnInit, OnDestroy {
     }
 
     const account = this.account();
+    const { organizationId, selectedImportTarget, canAccessImportExport } = context;
     let summary: OnePasswordImportSummary | undefined;
     try {
-      summary = await this.onePasswordDirectImportService.handleImport(
-        account,
-        context.organizationId,
-        context.selectedImportTarget,
-        context.canAccessImportExport,
-      );
+      summary =
+        this.formGroup.controls.signInMethod.value === "sso"
+          ? await this.onePasswordDirectImportService.handleSsoImport(
+              account,
+              organizationId,
+              selectedImportTarget,
+              canAccessImportExport,
+            )
+          : await this.onePasswordDirectImportService.handleImport(
+              account,
+              organizationId,
+              selectedImportTarget,
+              canAccessImportExport,
+            );
     } catch (error) {
       this.logService.error(`1Password importer error: ${onePasswordErrorLogName(error)}`);
       this.showError(error, account);
@@ -143,10 +170,12 @@ export class ImportOnePasswordComponent implements OnInit, OnDestroy {
   }
 
   private showError(error: unknown, account: OnePasswordAccount): void {
-    const { field, message } = this.onePasswordDirectImportService.describeError(
-      error,
-      account.domain,
-    );
+    const description = this.onePasswordDirectImportService.describeError(error, account.domain);
+    if (description == null) {
+      return;
+    }
+
+    const { field, message } = description;
     if (field === "email" || field === "signInAddress") {
       const control = field === "email" ? "email" : "subdomain";
       this.rejection.set({ control, value: this.formGroup.controls[control].value, message });

@@ -29,12 +29,7 @@ export const importSourceGroups: readonly ImportSourceGroup[] = [
     name: "1Password",
     featuredImporter: true,
     methods: [
-      {
-        format: "onepassword",
-        label: "directImporter",
-        translate: true,
-        hint: "onePasswordOnlyPasswordLogin",
-      },
+      { format: "onepassword", label: "directImporter", translate: true },
       { format: "1password1pux", label: "1pux/json" },
       { format: "1password1pif", label: "1pif" },
     ],

@@ -43,6 +43,10 @@ describe("onePasswordErrorDisplay", () => {
     expect(onePasswordErrorDisplay(importError(variant))).toEqual(display);
   });
 
+  it("shows nothing when the user canceled", () => {
+    expect(onePasswordErrorDisplay(importError("OnePasswordCanceled"))).toBeUndefined();
+  });
+
   it("shows any other SDK failure in a toast", () => {
     expect(onePasswordErrorDisplay(importError("OnePasswordNetwork"))).toEqual({
       messageKey: "onePasswordImportError",
