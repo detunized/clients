@@ -5691,12 +5691,6 @@
   "secretKeyAndPasswordDesc": {
     "message": "Your account is secured with a Secret Key and password. You will need to enter both to continue."
   },
-  "onePasswordSignInMethod": {
-    "message": "Sign-in method"
-  },
-  "singleSignOn": {
-    "message": "Single sign-on"
-  },
   "onePasswordSsoApproveDeviceTitle": {
     "message": "Approve this device"
   },

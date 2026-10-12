@@ -633,14 +633,17 @@ describe("ImportService", () => {
 
     let importOnePassword: jest.Mock;
     let importOnePasswordSso: jest.Mock;
+    let onePasswordSignInMethods: jest.Mock;
 
     beforeEach(() => {
       importOnePassword = jest.fn().mockResolvedValue(summary);
       importOnePasswordSso = jest.fn().mockResolvedValue(summary);
+      onePasswordSignInMethods = jest.fn().mockResolvedValue({ password: false, sso: true });
       const sdkValue = {
         importers: jest.fn().mockReturnValue({
           import_onepassword: importOnePassword,
           import_onepassword_sso: importOnePasswordSso,
+          onepassword_sign_in_methods: onePasswordSignInMethods,
         }),
       };
       const sdkClient = {
@@ -717,6 +720,31 @@ describe("ImportService", () => {
 
         await expect(
           importService.importOnePasswordSso(ssoRequest, null, null, false),
+        ).rejects.toThrow("SDK not available");
+      });
+    });
+
+    describe("onePasswordSignInMethods", () => {
+      it("asks the SDK how the account signs in", async () => {
+        const signInAddress = { subdomain: "my", domain: "Global" } as const;
+
+        const result = await importService.onePasswordSignInMethods(
+          "user@example.com",
+          signInAddress,
+        );
+
+        expect(result).toEqual({ password: false, sso: true });
+        expect(onePasswordSignInMethods).toHaveBeenCalledWith("user@example.com", signInAddress);
+      });
+
+      it("throws when the SDK client is unavailable", async () => {
+        sdkService.userClient$.mockReturnValue(of(null) as any);
+
+        await expect(
+          importService.onePasswordSignInMethods("user@example.com", {
+            subdomain: "my",
+            domain: "Global",
+          }),
         ).rejects.toThrow("SDK not available");
       });
     });

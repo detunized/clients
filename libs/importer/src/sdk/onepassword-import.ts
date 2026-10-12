@@ -6,7 +6,9 @@ import {
   OnePasswordSsoEnrollmentStatus,
   OnePasswordSsoUi,
   OnePasswordTwoFactorUi,
+  SignInAddress as OnePasswordSignInAddress,
   SignInDomain as OnePasswordSignInDomain,
+  SignInMethods as OnePasswordSignInMethods,
   SsoCredentials as OnePasswordSsoCredentials,
   isImportError,
 } from "@bitwarden/sdk-internal";
@@ -14,7 +16,9 @@ import {
 export {
   OnePasswordCredentials,
   OnePasswordImportSummary,
+  OnePasswordSignInAddress,
   OnePasswordSignInDomain,
+  OnePasswordSignInMethods,
   OnePasswordSsoCredentials,
   OnePasswordSsoEnrollment,
   OnePasswordSsoEnrollmentResult,

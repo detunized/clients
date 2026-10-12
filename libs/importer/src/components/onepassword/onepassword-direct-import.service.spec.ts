@@ -493,6 +493,41 @@ describe("OnePasswordDirectImportService", () => {
     });
   });
 
+  describe("signInMethod", () => {
+    function offer(password: boolean, sso: boolean, ssoSupported: boolean) {
+      importService.onePasswordSignInMethods.mockResolvedValue({ password, sso });
+      Object.assign(ssoBrowser, { supported: ssoSupported });
+    }
+
+    it("asks 1Password about the account", async () => {
+      offer(true, false, true);
+
+      await service.signInMethod(account);
+
+      expect(importService.onePasswordSignInMethods).toHaveBeenCalledWith("user@example.com", {
+        subdomain: "my",
+        domain: "Europe",
+      });
+    });
+
+    it.each([
+      [true, false, true, "password"],
+      [true, false, false, "password"],
+      [false, true, true, "sso"],
+      [false, true, false, undefined],
+      [true, true, true, "password"],
+      [true, true, false, "password"],
+      [false, false, true, undefined],
+    ] as const)(
+      "with password %s, SSO %s and SSO support %s picks %s",
+      async (password, sso, ssoSupported, expected) => {
+        offer(password, sso, ssoSupported);
+
+        await expect(service.signInMethod(account)).resolves.toBe(expected);
+      },
+    );
+  });
+
   describe("describeError", () => {
     it("describes any other failure as a toast", () => {
       expect(service.describeError(importError("OnePasswordNetwork"), "Global")).toEqual({

@@ -9,6 +9,8 @@ import { ImportResult } from "../models/import-result";
 import {
   OnePasswordImportRequest,
   OnePasswordImportSummary,
+  OnePasswordSignInAddress,
+  OnePasswordSignInMethods,
   OnePasswordSsoImportRequest,
   SdkImportCredentials,
   SdkImportSummary,
@@ -63,6 +65,12 @@ export abstract class ImportServiceAbstraction {
     selectedImportTarget?: FolderView | CollectionView,
     canAccessImportExport?: boolean,
   ) => Promise<OnePasswordImportSummary>;
+
+  /** Asks 1Password how the account signs in, before anything but its email is asked for. */
+  onePasswordSignInMethods: (
+    username: string,
+    signInAddress: OnePasswordSignInAddress,
+  ) => Promise<OnePasswordSignInMethods>;
 
   // Import an already-parsed ImportResult directly.
   importImportResult: (

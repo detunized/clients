@@ -34,6 +34,9 @@ export interface OnePasswordAccount {
   domain: OnePasswordSignInDomain;
 }
 
+/** How the account signs in on this client. */
+export type OnePasswordSignInMethod = "password" | "sso";
+
 /** A failed import as the user sees it. */
 export interface OnePasswordErrorDescription {
   /** The field to mark, or `undefined` for a toast. */
@@ -60,6 +63,25 @@ export class OnePasswordDirectImportService implements OnDestroy {
 
   private destroyed = false;
   private activeEnrollment: SsoEnrollmentPrompt | undefined;
+
+  /**
+   * Asks 1Password how the account signs in and picks the method to import it with, or resolves
+   * with `undefined` when the account offers none this client supports. An account that offers both
+   * is imported with the password, which needs no approval of a new device.
+   */
+  async signInMethod(account: OnePasswordAccount): Promise<OnePasswordSignInMethod | undefined> {
+    const offered = await this.importService.onePasswordSignInMethods(account.email, {
+      subdomain: account.subdomain,
+      domain: account.domain,
+    });
+    if (offered.password) {
+      return "password";
+    }
+    if (offered.sso && this.ssoBrowser.supported) {
+      return "sso";
+    }
+    return undefined;
+  }
 
   /**
    * Imports the account, or resolves with `undefined` when the user cancels one of the prompts.

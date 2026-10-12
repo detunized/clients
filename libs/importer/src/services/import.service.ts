@@ -113,6 +113,8 @@ import {
   buildSdkImporterRegistry,
   OnePasswordImportRequest,
   OnePasswordImportSummary,
+  OnePasswordSignInAddress,
+  OnePasswordSignInMethods,
   OnePasswordSsoImportRequest,
   resolveSdkImportTargets,
   SdkImportCredentials,
@@ -349,6 +351,24 @@ export class ImportService implements ImportServiceAbstraction {
       canAccessImportExport,
       (importers, options) =>
         importers.import_onepassword_sso(request.credentials, request.ui, options),
+    );
+  }
+
+  async onePasswordSignInMethods(
+    username: string,
+    signInAddress: OnePasswordSignInAddress,
+  ): Promise<OnePasswordSignInMethods> {
+    const userId = await firstValueFrom(this.accountService.activeAccount$.pipe(getUserId));
+    return await firstValueFrom(
+      this.sdkService.userClient$(userId).pipe(
+        switchMap(async (sdk) => {
+          if (!sdk) {
+            throw new Error("SDK not available");
+          }
+          using ref = sdk.take();
+          return await ref.value.importers().onepassword_sign_in_methods(username, signInAddress);
+        }),
+      ),
     );
   }
 

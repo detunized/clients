@@ -17083,9 +17083,6 @@
   "secretKeyAndPasswordDesc": {
     "message": "Your account is secured with a Secret Key and password. You will need to enter both to continue."
   },
-  "onePasswordSignInMethod": {
-    "message": "Sign-in method"
-  },
   "onePasswordSsoApproveDeviceTitle": {
     "message": "Approve this device"
   },
